@@ -1,0 +1,173 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-01-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+
+```{r}
+# Load the arrow package
+library(arrow)
+library(tidyr)
+```
+
+
+```{r}
+library(dplyr)
+# Use forward slashes and provide the full path to the CSV file
+aspartyl_proteases <- read.csv("C:/Users/Adam Martin/OneDrive - University of Dundee/Honours Project/231006a-AM-honours-project-aps/varalign-data-PF00026/csv/aspartyl_proteases.csv")
+
+
+#aspartyl_proteases <- aspartyl_proteases %>%
+#  filter(occupancy > 5)
+
+
+aspartyl_proteases <- aspartyl_proteases %>% mutate(dex = row_number())
+```
+
+
+```{r}
+names(aspartyl_proteases)
+
+aspartyl_proteases %>% select(X_missense_all, missense_variant)
+
+aspartyl_proteases$missense_variant
+```
+
+
+
+
+
+```{r}
+
+
+aspartyl_proteases$occupancy
+
+
+
+
+
+# Create a 2x2 contingency table
+total_occupancy <- sum(aspartyl_proteases$occupancy)
+total_missense <- sum(aspartyl_proteases$X_missense_all)
+
+df_fisher_MES <- data.frame(ID = numeric(0), Name = character(0))
+
+df <- data.frame(ID = numeric(0), Name = character(0))
+my_list <- list()
+
+
+
+missense_missense <- data.frame(column = numeric(),
+                    gnomADv3 = numeric(),
+                    gnomADv4 = numeric())
+
+
+for (i in unique(aspartyl_proteases$column)) {
+  sum_result_missense <- sum(subset(aspartyl_proteases, column == i)$X_missense_all)    #Change sum to average see the difference 
+  
+  occupancy <- aspartyl_proteases%>%
+    filter(column == i) %>%
+    select(occupancy)
+  occupancy <- occupancy$occupancy
+  
+  data <- matrix(c(sum_result_missense,(total_missense-sum_result_missense),occupancy,(total_occupancy-occupancy) ), nrow = 2)
+  fisher_result <- fisher.test(data) #,  alternative='two.sided')
+  combined_df <- cbind(i, fisher_result$p.value, fisher_result$conf.int[1], fisher_result$conf.int[2], fisher_result$estimate)
+  df_fisher_MES <- rbind(df_fisher_MES, combined_df)
+  
+  
+ 
+   new_row <- data.frame(column = i,
+                    #gnomADv3 = aspartyl_proteases %>% filter(column == i) %>% select(X_missense_all) ,
+                    gnomADv4 = sum_result_missense)
+    missense_missense <- rbind(missense_missense, new_row)
+
+
+}
+
+#merged_missense_missense_aspartyl <- merge(missense_missense, aspartyl_proteases, by = "column")
+
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "i"] <- "column"
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "V2"] <- "mes_p_own"
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "V3"] <- "conf.int_lower_own"
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "V4"] <- "conf.int_higher_own"
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "V5"] <- "mes_or_own"
+df_fisher_MES <- distinct(df_fisher_MES)
+print(df_fisher_MES)
+
+aspartyl_proteases_own <- aspartyl_proteases
+aspartyl_proteases_own <- merge(aspartyl_proteases, df_fisher_MES, by = "column")
+aspartyl_proteases_own$mes_p_own
+```
+
+```{r}
+library(dplyr)
+aspartyl_proteases_own <- aspartyl_proteases_own %>%
+  mutate(key_own = case_when(
+    #column == 40| column ==41 | column ==42 | column ==475 | column ==476 | column ==477  ~"Active site",
+    mes_p_own > 0.05  ~ "No significance",
+    shenkin_nrank < 0.25 & mes_or_own < 1 ~ "CMD",
+    shenkin_nrank > 0.75 & mes_or_own < 1 ~ "UMD",
+    shenkin_nrank < 0.25 & mes_or_own > 1 ~ "No significance",
+    shenkin_nrank > 0.75 & mes_or_own > 1 ~"No significance",
+    TRUE ~ "No significance"  # default color for other cases
+))
+#legend_order <- c( "CMD", "UMD", "No significance", "Active site")
+#aspartyl_proteases$key <- factor(aspartyl_proteases$key, levels = legend_order)
+
+#active_site <- which(aspartyl_proteases$key == "Active site") 
+#active_site
+
+library(dplyr)
+aspartyl_proteases_own <- aspartyl_proteases_own %>%
+  mutate(key = case_when(
+    column == 40| column ==41 | column ==42 | column ==475 | column ==476 | column ==477  ~"Active site",
+    mes_p > 0.05  ~ "No significance",
+    shenkin_nrank < 0.25 & mes_or < 1 ~ "CMD",
+    shenkin_nrank > 0.75 & mes_or < 1 ~ "UMD",
+    shenkin_nrank < 0.25 & mes_or > 1 ~ "No significance",
+    shenkin_nrank > 0.75 & mes_or > 1 ~"No significance",
+    TRUE ~ "No significance"  # default color for other cases
+))
+
+
+
+
+
+
+
+df <- aspartyl_proteases_own[, c("mes_or", "mes_or_own", "mes_p", "mes_p_own", "key",  "key_own")]
+
+names(aspartyl_proteases_own)
+
+CMD_UMD_Active <- aspartyl_proteases_own %>%
+  filter(key_own %in% c("UMD", "CMD", "Active site"))%>%
+  select(column, key_own, key, dex)
+CMD_UMD_Active
+
+
+
+```
+```{r}
+file_path <- "C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/df.csv"
+
+# Export the data frame to CSV
+write.csv(df, file = file_path, row.names = FALSE)
+
+# Print a message indicating success
+cat("Data frame exported to CSV:", file_path, "\n")
+
+
+```
+

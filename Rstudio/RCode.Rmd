@@ -1,0 +1,1382 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+```{r}
+# Load the arrow package
+library(arrow)
+library(tidyr)
+
+# Replace the file path with your actual file path
+file_path <- "C:\\Users\\Adam Martin\\OneDrive - University of Dundee\\Honours Project\\231006a-AM-honours-project-aps\\varalign-data-PF00026\\feather\\PF00026.22_swissprot.sto_prointvar_structure_table.p.gz.feather"
+
+# Read the Feather file
+structure <- arrow::read_feather(file_path)
+```
+
+
+```{r}
+n_strucs <- length(unique(structure$PDB_dbAccessionId_A))
+n_strucs
+n_prots <- length(unique(structure$UniProt_dbAccessionId_A))
+n_prots
+count_prot <- table(structure$SOURCE_ID_A)
+
+
+cleaned_proteins <- sub("/.*", "", structure$SOURCE_ID_A)
+human_proteins <- cleaned_proteins[grep("HUMAN", cleaned_proteins)]
+human_proteins <- human_proteins[grep("HUMAN", human_proteins)]
+
+human_proteins_for_writing <- sub("_.*", "", human_proteins)
+
+```
+
+###### necxt  #########
+```{r}
+library(dplyr)
+# Use forward slashes and provide the full path to the CSV file
+aspartyl_proteases <- read.csv("C:/Users/Adam Martin/OneDrive - University of Dundee/Honours Project/231006a-AM-honours-project-aps/varalign-data-PF00026/csv/aspartyl_proteases.csv")
+
+
+aspartyl_proteases <- aspartyl_proteases %>%
+  filter(occupancy > 5)
+
+
+aspartyl_proteases <- aspartyl_proteases %>% mutate(dex = row_number())
+```
+
+
+
+
+
+#####Files noemalised nranked#####
+```{r}
+library(dplyr)
+aspartyl_proteases <- aspartyl_proteases %>%
+  mutate(key.y = case_when(
+    mes_p > 0.1  ~ "No significance",
+    shenkin_nrank < 0.25 & mes_or < 1 ~ "CMD",
+    shenkin_nrank > 0.75 & mes_or < 1 ~ "UMD",
+    shenkin_nrank < 0.25 & mes_or > 1 ~ "No significance",
+    shenkin_nrank > 0.75 & mes_or > 1 ~"No significance",
+    TRUE ~ "No significance"  # default color for other cases
+))
+
+
+active_site_column <- c(40,41,42, 475,476,477)
+for (column_number in active_site_column) {
+merged_df <- merged_df %>%
+  mutate(key.y = case_when(
+    column == column_number & key.y == "No significance" ~ "Active site",
+    TRUE ~ key.y
+  )) }
+
+
+legend_order <- c( "CMD", "UMD", "No significance", "Active site")
+aspartyl_proteases$key <- factor(aspartyl_proteases$key, levels = legend_order)
+
+active_site <- which(aspartyl_proteases$key == "Active site") 
+active_site
+
+
+
+CMD_UMD_Active <- aspartyl_proteases %>%
+  filter(key %in% c("UMD", "CMD", "Active site"))%>%
+  select(column, key, dex)
+CMD_UMD_Active
+
+
+
+```
+
+######MES graph, active site visuable ######
+```{r}
+library(ggplot2)
+
+
+
+
+
+df_ordered <- aspartyl_proteases[order(aspartyl_proteases$shenkin_nrank), ]
+df_ordered$dex
+df_ordered$shenkin_nrank
+
+your_plot <-ggplot(aspartyl_proteases, aes(x = shenkin_nrank, y = mes_or, color = key, alpha = key)) +
+  geom_point() +
+  #geom_text(data = aspartyl_proteases, aes(label = column), hjust = -0.2, vjust = 0.5, size = 4) +
+  labs(x = "Normalised conservation score", y = "Missense score (human variation)") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0.25, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0.75, linetype = "dashed", color = "black") + 
+  #scale_color_manual(values = c("grey" = "grey", "blue" = "blue", "red" = "red", "purple" = "purple", "black"="black" )) + 
+  scale_color_manual(values = c("Active site" = "purple", "No significance" = "grey", "black" = "black", "UMD" = "red", "CMD" = "blue", "UME" = "yellow" )) +
+  scale_alpha_manual(values = c("Active site" = 0.8, "No significance" = 0.4, "CMD" = 0.8, "UMD" = 0.8)) +
+  scale_y_log10()
+
+your_plot
+
+
+ggsave("C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/MES_shenkin_GnomadV3.png", plot = your_plot, width = 6, height = 4, units = "in")
+
+
+```
+```{r}
+
+
+
+# Create a 2x2 contingency table
+total_occupancy <- sum(aspartyl_proteases$occupancy)
+total_missense <- sum(aspartyl_proteases$X_missense_all)
+
+df_fisher_MES <- data.frame(ID = numeric(0), Name = character(0))
+missense_missense <- data.frame(ID = numeric(0), Name = character(0))
+df <- data.frame(ID = numeric(0), Name = character(0))
+my_list <- list()
+
+
+
+
+
+# Create a 2x2 contingency table
+total_occupancy <- sum(aspartyl_proteases$occupancy)
+total_missense <- sum(aspartyl_proteases$X_missense_all)
+
+df_fisher_MES <- data.frame(ID = numeric(0), Name = character(0))
+
+df <- data.frame(ID = numeric(0), Name = character(0))
+my_list <- list()
+
+
+
+missense_missense <- data.frame(column = numeric(),
+                    gnomADv3 = numeric(),
+                    gnomADv4 = numeric())
+
+
+for (i in unique(aspartyl_proteases$column)) {
+  sum_result_missense <- sum(subset(aspartyl_proteases, column == i)$X_missense_all)    #Change sum to average see the difference 
+  
+  occupancy <- aspartyl_proteases%>%
+    filter(column == i) %>%
+    select(occupancy)
+  occupancy <- occupancy$occupancy
+  
+  data <- matrix(c(sum_result_missense,(total_missense-sum_result_missense),occupancy,(total_occupancy-occupancy) ), nrow = 2)
+  fisher_result <- fisher.test(data) #,  alternative='two.sided')
+  combined_df <- cbind(i, fisher_result$p.value, fisher_result$conf.int[1], fisher_result$conf.int[2], fisher_result$estimate)
+  df_fisher_MES <- rbind(df_fisher_MES, combined_df)
+  
+  
+ 
+   new_row <- data.frame(column = i,
+                    #gnomADv3 = aspartyl_proteases %>% filter(column == i) %>% select(X_missense_all) ,
+                    gnomADv4 = sum_result_missense)
+    missense_missense <- rbind(missense_missense, new_row)
+
+
+}
+
+#merged_missense_missense_aspartyl <- merge(missense_missense, aspartyl_proteases, by = "column")
+
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "i"] <- "column"
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "V2"] <- "mes_p_own"
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "V3"] <- "conf.int_lower_own"
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "V4"] <- "conf.int_higher_own"
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "V5"] <- "mes_or_own"
+df_fisher_MES <- distinct(df_fisher_MES)
+print(df_fisher_MES)
+
+aspartyl_proteases_own <- aspartyl_proteases
+aspartyl_proteases_own <- merge(aspartyl_proteases, df_fisher_MES, by = "column")
+aspartyl_proteases_own$mes_p_own
+
+    library(dplyr)
+aspartyl_proteases_own <- aspartyl_proteases_own %>%
+  mutate(key_own = case_when(
+    column == 40| column ==41 | column ==42 | column ==475 | column ==476 | column ==477  ~"Active site",
+    mes_p > 0.05  ~ "No significance",
+    shenkin_nrank < 0.25 & mes_or < 1 ~ "CMD",
+    shenkin_nrank > 0.75 & mes_or < 1 ~ "UMD",
+    shenkin_nrank < 0.25 & mes_or > 1 ~ "No significance",
+    shenkin_nrank > 0.75 & mes_or > 1 ~"No significance",
+    TRUE ~ "No significance"  # default color for other cases
+))
+library(dplyr)
+#df <- aspartyl_proteases_own[, c("mes_or", "mes_or_own", "mes_p", "mes_p_own", "key",  "key_own")]
+
+names(aspartyl_proteases_own)
+
+CMD_UMD_Active <- aspartyl_proteases_own %>%
+  filter(key_own %in% c("UMD", "CMD", "Active site"))%>%
+  select(column, key_own, key, dex)
+CMD_UMD_Active
+
+
+
+    
+
+
+
+aspartyl_proteases_own$ymin <- mean(aspartyl_proteases_own$conf.int_lower)
+aspartyl_proteases_own$ymax <- mean(aspartyl_proteases_own$conf.int_higher)
+
+# Scatter plot without individual error bars
+your_plot <-ggplot(aspartyl_proteases_own, aes(x = shenkin_nrank, y = mes_or, color = key, alpha = key)) +
+  geom_point() +
+  #geom_text(data = aspartyl_proteases, aes(label = column), hjust = -0.2, vjust = 0.5, size = 4) +
+  labs(x = "Normalised conservation score", y = "Missense score (human variation)") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0.25, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0.75, linetype = "dashed", color = "black") + 
+  #scale_color_manual(values = c("grey" = "grey", "blue" = "blue", "red" = "red", "purple" = "purple", "black"="black" )) + 
+  scale_color_manual(values = c("Active site" = "purple", "No significance" = "grey", "black" = "black", "UMD" = "red", "CMD" = "blue", "UME" = "yellow" )) +
+  scale_alpha_manual(values = c("Active site" = 0.8, "No significance" = 0.4, "CMD" = 0.8, "UMD" = 0.8)) +
+  scale_y_log10()
+your_plot
+
+# Add a single average confidence interval to the bottom right-hand side of the plot
+your_plot <- your_plot + geom_errorbar(
+  data = aspartyl_proteases_own,
+  aes(x = shenkin_nrank, ymin = ymin, ymax = ymax),
+  width = 0.2,
+  color = "blue",
+  linetype = "solid",
+  show.legend = TRUE
+) +
+labs(
+  title = "Scatter Plot with Average Confidence Interval",
+  caption = "Average Confidence Interval"
+)
+
+# Print the plot
+print(your_plot)
+
+
+
+```
+```{r}
+# Assuming you have calculated avg_lower_bound and avg_upper_bound from your Fisher's Exact Test
+
+# Scatter plot without individual error bars
+your_plot <- ggplot(aspartyl_proteases_own, aes(x = shenkin_nrank, y = mes_or, color = key, alpha = key)) +
+  geom_point() +
+  labs(x = "Normalised conservation score", y = "Missense score (human variation)") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0.25, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0.75, linetype = "dashed", color = "black") + 
+  scale_color_manual(values = c("Active site" = "purple", "No significance" = "grey", "black" = "black", "UMD" = "red", "CMD" = "blue", "UME" = "yellow" )) +
+  scale_alpha_manual(values = c("Active site" = 0.8, "No significance" = 0.4, "CMD" = 0.8, "UMD" = 0.8)) +
+  scale_y_log10() +
+  # Add a single average confidence interval near the caption
+  geom_errorbar(
+    aes(x = max(aspartyl_proteases_own$shenkin_nrank) , y =  max(aspartyl_proteases_own$mes_or)),
+    ymin = avg_lower_bound,
+    ymax = avg_upper_bound,
+    width = 0.05,  # Adjust the width of the error bar
+    color = "blue",
+    linetype = "solid"
+  ) +
+  labs(
+    title = "Scatter Plot with Average Confidence Interval",
+    caption = "Average Confidence Interval"
+  ) +
+  theme(legend.position = "none")  # Optional: Remove the legend if not needed
+
+# Print the plot
+print(your_plot)
+
+```
+
+
+
+
+
+  
+        
+        
+
+
+######Protein, ligand interactions, Active site visuable ######
+
+
+
+
+```{r}
+
+aspartyl_proteases$PDB_protein_ligand_interactions <- ifelse(is.na(aspartyl_proteases$PDB_protein_ligand_interactions), 0, aspartyl_proteases$PDB_protein_ligand_interactions)
+aspartyl_proteases$PDB_protein_protein_interactions <- ifelse(is.na(aspartyl_proteases$PDB_protein_protein_interactions), 0, aspartyl_proteases$PDB_protein_protein_interactions)
+
+number_rows <- nrow(aspartyl_proteases)
+library(ggplot2)
+
+ligand_or_protein_graph <- function(data, y_column, key, yaxis, save_path) {
+  your_plot <- ggplot(data, aes(x = dex, y = {{ y_column }}, fill = {{ key }})) +
+    geom_bar(stat = "identity") +
+    coord_cartesian(ylim = c(0, 16), xlim = c(0, number_rows)) +
+    scale_y_continuous(breaks = seq(0, 16, by = 2)) +
+    scale_x_continuous(breaks = seq(0, number_rows, by = 25)) +
+    labs(x = ifelse(key == "Protein", "Alignment Column", ""), y = yaxis) +
+    scale_fill_manual(values = c("UMD" = "red", "CMD" = "blue", "No significance" = "grey", "Active site" = "purple")) +
+    theme(legend.position = ifelse( yaxis== "Protein", "bottom", "none"), legend.justification = "center",
+          legend.title = element_blank(), plot.margin = margin(0, 0, 0, 0))
+  print(your_plot)
+  
+}
+
+
+plot1 <- ligand_or_protein_graph(aspartyl_proteases, aspartyl_proteases$PDB_protein_ligand_interactions,aspartyl_proteases$key, "Ligand",  "C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/ligand_interaction.png")
+
+plot2 <- ligand_or_protein_graph(aspartyl_proteases, aspartyl_proteases$PDB_protein_protein_interactions,aspartyl_proteases$key, "Protein",  "C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/protein_interaction.png")
+
+
+
+
+#plot_list <- list(plot1, plot2)
+
+#combined_plot <- plot_grid(
+#  plotlist = plot_list,
+#  ncol = 1,
+#  widths = unit(30, "inches"),
+#  rel_heights = c(2, 1.4)
+#)
+
+
+#save_path <- "C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/ligand_protein_interaction.png"
+#print(combined_plot)
+#ggsave(save_path, plot = combined_plot, width = 30, height = 15, units = "in")
+
+
+#nrow(aspartyl_proteases)
+
+#aspartyl_proteases$dex
+
+#Plotted on a new index, to remove gaps
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+#library(ggplot2)
+#
+
+#
+
+#
+
+#create_custom_plot <- function(selected_columns, index_of_UMD_CMD_active_site, yaxis, save_path) {
+#  
+#  selected_columns$index <- seq_len(nrow(selected_columns))
+#  df_long <- gather(selected_columns, key = "Variable", value = "Value", -index)
+#  df_combined <- cbind(df_long, keys = aspartyl_proteases$key)
+#  p <- ggplot(df_combined, aes(x = index, y = Value, fill = Variable, alpha = as.factor(index %in% index_of_UMD_CMD_active_site))) +
+#    geom_bar(stat = "identity") +
+#    labs(x = "Alignment Column", y = yaxis, fill = "") +
+#    coord_cartesian(ylim = c(0, 16)) +
+#    scale_y_continuous(breaks = seq(0, 16, by = 2)) +
+#    scale_x_continuous(breaks = seq(0, 388, by = 25)) +
+#    scale_alpha_manual(values = c("TRUE" = 2, "FALSE" = 0.25), guide = "none") +
+#    theme(legend.position = "bottom", legend.justification = "center")
+#print(p)
+#save_path <-paste0("C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/", save_path)
+#print(save_path)
+#ggsave(save_path, plot = p, width = 6, height = 4, units = "in")
+
+#}
+
+
+#read_feather_file <- function(file_path) {
+  
+#  data <- arrow::read_feather(file_path)
+#  return(data)
+#}
+
+
+#file_path <- "C:/Users/Adam Martin/OneDrive - University of Dundee/Honours Project/231006a-AM-honours-project-aps/varalign-data-PF00026/feather/"
+
+
+#rsa_class <- read_feather_file(paste0(file_path, "rsa_class_df.feather"))
+#rsa_class <- rsa_class %>% rename(column = "__index_level_0__")
+#rsa_class <- left_join(aspartyl_proteases, rsa_class, by = "column")
+#selected_columns <- rsa_class[c("core", "part", "surf")]
+#RSA <- create_custom_plot(selected_columns, CMD_UMD_Active$dex, "Amino acid position", "RSA.png")
+
+
+#ss_class <- read_feather_file(paste0(file_path,"ss_class_df.feather"))
+#ss_class <- ss_class %>% rename(column = "__index_level_0__")
+#ss_class <- left_join(aspartyl_proteases, ss_class, by = "column")
+#selected_columns <- ss_class[c("helix", "coil", "strand")]
+#create_custom_plot(selected_columns, CMD_UMD_Active$dex,"Secondary structure", "SS.png")
+
+#ss_df <- read_feather_file(paste0(file_path, "ss_df.feather"))
+#selected_columns <- ss_df[c("a_helix", "b_bridge", "strand", "helix_3_10", "pi_helix", "turn", "bend", "coil")]
+#create_custom_plot(selected_columns, CMD_UMD_Active$dex, "Secondary structure defined", "SS_defined.png")
+
+
+#Plotted on a new index, to remove gaps
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(cowplot)
+
+number_rows <- nrow(aspartyl_proteases)
+
+create_custom_plot <- function(selected_columns, index_of_UMD_CMD_active_site, title, key, i) {
+  selected_columns$index <- seq_len(nrow(selected_columns))
+  df_long <- gather(selected_columns, key = "Variable", value = "Value", -index)
+  df_combined <- cbind(df_long, keys = key)
+  
+  p <- ggplot(df_combined, aes(x = index, y = Value, fill = Variable, alpha = as.factor(index %in% index_of_UMD_CMD_active_site))) +
+    geom_bar(stat = "identity") +
+    #theme_minimal() +
+    labs(x = ifelse(i == "Active site", "Alignment Column", ""), y = i, fill = "") +
+    coord_cartesian(ylim = c(0, 16), xlim = c(0, number_rows)) +
+    scale_y_continuous(breaks = seq(0, 16, by = 4)) +
+    scale_x_continuous(breaks = seq(0, number_rows, by = 25)) +
+    scale_alpha_manual(values = c("TRUE" = 5, "FALSE" = 0.2), guide = "none") +
+    theme(legend.position = ifelse(i == "Active site", "bottom", "none"), legend.justification ="center", plot.margin = margin(0, 0, 0, 0),      plot.title = element_text(hjust = 0.5))  # Center the title
+
+  if (i == "CMD") {
+    p <- p + ggtitle(title)  # Add your desired title
+  }
+  print(p)
+  return(p)
+}
+
+read_feather_file <- function(file_path) {
+  data <- arrow::read_feather(file_path)
+  return(data)
+}
+
+create_plot <- function(selected_columns, CMD_UMD_Active, title, key) {
+  plot_list <- list()
+
+  for (i in c("CMD", "UMD", "Active site")) {
+    CMD_UMD_Active_filter <- CMD_UMD_Active %>% filter(key == i)
+    plot <- create_custom_plot(selected_columns, CMD_UMD_Active_filter$dex,  title, key, i)
+    plot_list[[i]] <- plot
+  }
+
+  combined_plot <- plot_grid(plotlist = plot_list, ncol = 1,  widths = unit(8.27, "inches"), rel_heights = c(1.6, 1.3, 1))
+  print(combined_plot)
+  return(combined_plot)
+}
+CMD_UMD_Active <- aspartyl_proteases %>%
+  filter(key %in% c("UMD", "CMD", "Active site"))%>%
+  select(column, key, dex)
+CMD_UMD_Active
+
+
+file_path <- "C:/Users/Adam Martin/OneDrive - University of Dundee/Honours Project/231006a-AM-honours-project-aps/varalign-data-PF00026/feather/"
+
+
+rsa_class <- read_feather_file(paste0(file_path, "rsa_class_df.feather"))
+rsa_class <- rsa_class %>% rename(column = "__index_level_0__")
+rsa_class <- left_join(aspartyl_proteases, rsa_class, by = "column")
+selected_columns <- rsa_class[c("core", "part", "surf")]
+plot<-create_plot(selected_columns, CMD_UMD_Active, "Amino acid position", "RSA")
+save_path <-"C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/RSA_GnomadV3.png"
+ggsave(save_path, plot = plot, width = 6, height = 4, units = "in")
+
+ss_class <- read_feather_file(paste0(file_path,"ss_class_df.feather"))
+ss_class <- ss_class %>% rename(column = "__index_level_0__")
+ss_class <- left_join(aspartyl_proteases, ss_class, by = "column")
+selected_columns <- ss_class[c("helix", "coil", "strand")]
+plot<-create_plot(selected_columns, CMD_UMD_Active, "Secondary structure", "SS")
+save_path <-"C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/SS_GnomadV3.png"
+ggsave(save_path, plot = plot, width = 6, height = 4, units = "in")
+
+
+
+
+
+
+```
+```{r}
+create_custom_plot <- function(selected_columns, index_of_UMD_CMD_active_site, title, key, i) {
+  selected_columns$index <- seq_len(nrow(selected_columns))
+  df_long <- gather(selected_columns, key = "Variable", value = "Value", -index)
+  df_combined <- cbind(df_long, keys = key)
+  
+  p <- ggplot(df_combined, aes(x = index, y = Value, fill = Variable, alpha = as.factor(index %in% index_of_UMD_CMD_active_site))) +
+    geom_bar(stat = "identity") +
+    labs(x = ifelse(i == "Active site", "Alignment Column", ""), y = i, fill = "") +
+    coord_cartesian(ylim = c(0, 16), xlim = c(0, number_rows)) +
+    scale_y_continuous(breaks = seq(0, 16, by = 4)) +
+    scale_x_continuous(breaks = seq(0, number_rows, by = 25)) +
+    scale_alpha_manual(values = c("TRUE" = 2, "FALSE" = 0.25), guide = "none") +
+    theme(legend.position = ifelse(i == "Active site", "bottom", "none"),
+          legend.justification ="center",
+          plot.margin = margin(0, 0, 0, 0),
+          axis.text.x = ifelse(i == "Active site", element_text(), element_blank())
+    )
+  print(p)
+  return(p)
+}
+
+```
+
+
+
+
+
+
+#####Gnomad v4 testing######
+
+
+
+
+```{r}
+unique_protein_names <-  unique(structure$SOURCE_ID_A)
+human_proteins_accessions <- unique_protein_names[grep("HUMAN", unique_protein_names)]
+human_proteins <-  sub("_HUMAN", "", human_proteins_accessions)
+human_proteins <-  sub("/.*$", "", human_proteins)
+human_proteins
+
+
+
+
+protein_to_gnomad_accession <- structure %>%
+  filter(!duplicated(Ensembl_dbAccessionId_A))
+
+protein_to_gnomad_accession <- protein_to_gnomad_accession %>%
+  filter(SOURCE_ID_A %in% human_proteins_accessions)
+
+protein_to_gnomad_accession[,c("SOURCE_ID_A", "Ensembl_dbAccessionId_A")]
+
+```
+
+
+
+
+```{r}
+# Makes a df that contains gene name, key, alignment column and protein position
+colnames(structure)[colnames(structure) == "Alignment_column_A"] <- "column"
+mini_aspartyl_proteases <- aspartyl_proteases  %>%
+  #filter(key %in% c("CMD", "UMD", "Active site"))%>%
+  select(key, column, dex)
+
+merged_structure <- merge(structure, mini_aspartyl_proteases, by = "column")
+
+merged_structure_dictionary_human <- merged_structure %>%
+  filter( SOURCE_ID_A %in% human_proteins_accessions)  %>%
+  select(SOURCE_ID_A, key, column, UniProt_dbResNum_A, dex)%>%
+  distinct()
+
+
+#merged_structure_dictionary_human %>% filter(SOURCE_ID_A == "BACE1_HUMAN/74-418", UniProt_dbResNum_A == 255)
+#aspartyl_proteases %>% filter(column == 391) %>% select()
+```
+
+
+```{r}
+library(arrow)
+library(tidyr)
+
+file_path <- "C:/Users/Adam Martin/OneDrive - University of Dundee/Honours Project/231006a-AM-honours-project-aps/varalign-data-PF00026/feather/PF00026.22_swissprot.sto_variants.p.gz.feather"
+# Read the Feather file
+variants <- arrow::read_feather(file_path)
+colnames(variants)[colnames(variants) == "alignment_column"] <- "column"
+```
+
+
+
+```{r}
+original_alignment_important_human_variants <- aspartyl_proteases %>%
+  filter(key %in% c("CMD", "UMD", "Active site"))
+original_alignment_important_human_variants
+
+original_alignment_important_human_variants$missense_variant
+
+```
+
+
+```{r}
+library(stringr)
+read_csv_file <- function(file_path) {
+  data <- read.csv(file_path)
+  data <- data %>% filter(VEP.Annotation == "missense_variant") #### Added in VEP.Annotation selecting for only missense varaints
+  data$HGVS.Consequence <- sub("^p\\.", "", data$HGVS.Consequence)
+  data$Amino_Acid_original <- str_extract(data$HGVS.Consequence, "[A-Za-z]+")
+  data$Position <- as.numeric(str_extract(data$HGVS.Consequence, "\\d+"))
+  data$Amino_Acid_missense_mutation <- str_extract(data$HGVS.Consequence, "[A-Za-z]{3}$")
+  
+  
+  return(data)
+}
+
+file_path <- "C:/Users/Adam Martin/OneDrive - University of Dundee/Honours Project/231006a-AM-honours-project-aps/varalign-data-PF00026/csv/gnomadv4/"
+
+
+protein_to_gnomad_accession[,c("SOURCE_ID_A", "Ensembl_dbAccessionId_A")]
+# CATE was found on GnomAD v4 may not have been present in gnomAD v2
+
+
+RENI_HUMAN <- read_csv_file(paste0(file_path,"gnomAD_v4.0.0_ENSG00000143839_2023_12_29_21_14_25.csv"))
+CATD_HUMAN <- read_csv_file(paste0(file_path,"gnomAD_v4.0.0_ENSG00000117984_2023_12_29_21_58_37.csv"))  
+PEPA4_HUMAN <- read_csv_file(paste0(file_path,"gnomAD_v4.0.0_ENSG00000229183_2024_01_14_22_36_30.csv"))
+CATE_HUMAN <- read_csv_file(paste0(file_path,"gnomAD_v4.0.0_ENSG00000196188_2024_01_14_22_23_16.csv")) 
+PEPC_HUMAN <- read_csv_file(paste0(file_path,"gnomAD_v4.0.0_ENSG00000096088_2023_12_29_21_59_00.csv")) 
+BACE1_HUMAN <- read_csv_file(paste0(file_path,"gnomAD_v4.0.0_ENSG00000186318_2023_12_29_21_59_20.csv"))
+BACE2_HUMAN <- read_csv_file(paste0(file_path,"gnomAD_v4.0.0_ENSG00000182240_2023_12_29_21_59_42.csv"))
+
+
+
+RENI_HUMAN
+```
+
+
+
+
+
+
+```{r}
+library(stringr)
+
+protein_gnomadv4_matching <- function(merged_structure_dictionary_human, protein, protein_df) {
+  
+  
+  alignment <- merged_structure_dictionary_human %>% filter( SOURCE_ID_A == protein)
+  
+  df <- data.frame(ID = numeric(0), Name = character(0))
+  
+ 
+  
+  for (i in alignment$UniProt_dbResNum_A) {
+    
+    matching_rows <- filter(protein_df, Position == i)
+    
+    if (nrow(matching_rows) > 0) {
+      matching_rows$protien_position <- i
+      alignment_column_key <- alignment  %>%
+      filter(UniProt_dbResNum_A == i)    %>%
+      select(column , key)
+      combined_df <- cbind(matching_rows, alignment_column_key)
+      df <- rbind(df, combined_df)
+    }
+  }
+  df <- df %>%
+  mutate(Gene = protein) %>%
+  select(Gene, everything())
+  #df <- df %>%
+  #  filter("VEP.Annotation"== "missense_variant")
+  
+return(df)#[, c( "Gene", "HGVS.Consequence", "Allele.Count", "protien_position", "column", "key")])
+  
+}
+
+RENI_HUMAN_sites <- protein_gnomadv4_matching(merged_structure_dictionary_human, "RENI_HUMAN/85-405", RENI_HUMAN)
+CATD_HUMAN_sites <- protein_gnomadv4_matching( merged_structure_dictionary_human, "CATD_HUMAN/78-409", CATD_HUMAN)
+PEPA4_HUMAN_sites <- protein_gnomadv4_matching( merged_structure_dictionary_human, "PEPA4_HUMAN/75-387", PEPA4_HUMAN)
+CATE_HUMAN_sites <- protein_gnomadv4_matching( merged_structure_dictionary_human, "CATE_HUMAN/77-399", CATE_HUMAN)
+PEPC_HUMAN_sites <- protein_gnomadv4_matching( merged_structure_dictionary_human, "PEPC_HUMAN/72-387", PEPC_HUMAN)
+BACE1_HUMAN_sites <- protein_gnomadv4_matching( merged_structure_dictionary_human, "BACE1_HUMAN/74-418", BACE1_HUMAN)
+BACE2_HUMAN_sites <- protein_gnomadv4_matching( merged_structure_dictionary_human, "BACE2_HUMAN/91-431", BACE2_HUMAN)
+
+
+
+merged_structure_dictionary_human
+
+
+All_HUMAN_sites <- rbind(RENI_HUMAN_sites, CATD_HUMAN_sites, PEPA4_HUMAN_sites, CATE_HUMAN_sites, PEPC_HUMAN_sites, BACE1_HUMAN_sites, BACE2_HUMAN_sites)
+All_HUMAN_sites <- All_HUMAN_sites%>%
+  filter(Filters...exomes == "PASS")#, Filters...genomes == "PASS")  #Only if it passes the exome filter
+
+
+
+```
+
+
+
+```{r}
+aspartyl_proteases$occupancy
+
+
+
+
+
+# Create a 2x2 contingency table
+total_occupancy <- sum(aspartyl_proteases$occupancy)
+total_missense <- sum(All_HUMAN_sites$Allele.Count)
+
+df_fisher_MES <- data.frame(ID = numeric(0), Name = character(0))
+
+df <- data.frame(ID = numeric(0), Name = character(0))
+my_list <- list()
+
+
+
+missense_missense <- data.frame(column = numeric(),
+                    gnomADv3 = numeric(),
+                    gnomADv4 = numeric())
+
+
+for (i in unique(merged_structure_dictionary_human$column)) {
+  
+  missense_at_pos <- subset(All_HUMAN_sites, column == i)
+  #sum_missense_at_position <- sum(subset(All_HUMAN_sites, column == i)$Allele.Count)    #Change sum to average see the difference 
+  sum_missense_at_position <- nrow(missense_at_pos)
+  total_missense <- nrow(All_HUMAN_sites)
+  occupancy <- aspartyl_proteases%>%
+    filter(column == i) %>%
+    select(occupancy)
+  occupancy <- occupancy$occupancy
+  
+  data <- matrix(c(sum_missense_at_position,(total_missense-sum_missense_at_position),occupancy,(total_occupancy-occupancy) ), nrow = 2)
+  fisher_result <- fisher.test(data)
+  combined_df <- cbind(i, fisher_result$p.value, fisher_result$conf.int[1], fisher_result$conf.int[2], fisher_result$estimate)
+  df_fisher_MES <- rbind(df_fisher_MES, combined_df)
+  
+  
+ 
+   new_row <- data.frame(column = i,
+                    gnomADv3 = aspartyl_proteases %>% filter(column == i) %>% select(X_missense_all) ,
+                    gnomADv4 = sum_missense_at_position)
+    missense_missense <- rbind(missense_missense, new_row)
+
+
+}
+
+merged_missense_missense_aspartyl <- merge(missense_missense, aspartyl_proteases, by = "column")
+
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "i"] <- "column"
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "V2"] <- "mes_p"
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "V3"] <- "conf.int_lower"
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "V4"] <- "conf.int_higher"
+colnames(df_fisher_MES)[colnames(df_fisher_MES) == "V5"] <- "mes_or"
+df_fisher_MES <- distinct(df_fisher_MES)
+print(df_fisher_MES)
+```
+
+
+```{r}
+
+file_path <- "C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/missense_comparison_3.csv"
+
+# Export the data frame to CSV
+write.csv(missense_missense, file = file_path, row.names = FALSE)
+
+# Print a message indicating success
+cat("Data frame exported to CSV:", file_path, "\n")
+
+
+
+```
+```{r}
+n_rank <- aspartyl_proteases[, c("column", "shenkin_nrank")]
+n_rank
+
+
+merged_df <- merge(df_fisher_MES, n_rank, by = "column")
+merged_df
+```
+```{r}
+library(dplyr)
+merged_df <- merged_df %>%
+  mutate(key_GnomadV4 = case_when(
+    
+    mes_p > 0.1  ~ "No significance",
+    shenkin_nrank < 0.25 & mes_or < 1 ~ "CMD",
+    shenkin_nrank > 0.75 & mes_or < 1 ~ "UMD",
+    shenkin_nrank < 0.25 & mes_or > 1 ~ "No significance",
+    shenkin_nrank > 0.75 & mes_or > 1 ~"No significance",
+    TRUE ~ "No significance"  # default color for other cases
+))
+legend_order <- c( "CMD", "UMD", "No significance", "Active site")
+#merged_df$key_GnomadV4 <- factor(merged_df$key, levels = legend_order)
+
+
+    
+active_site_column <- c(40,41,42, 475,476,477)
+for (column_number in active_site_column) {
+merged_df <- merged_df %>%
+  mutate(key_GnomadV4 = case_when(
+    column == column_number & key_GnomadV4 == "No significance" ~ "Active site",
+    TRUE ~ key_GnomadV4
+  )) }
+
+table(merged_df$key_GnomadV4)
+merged_df %>% filter(key_GnomadV4 == "CMD")
+merged_df %>% filter(key_GnomadV4 == "UMD")
+aspartyl_proteases %>% filter(key %in%  c("CMD","UMD", "Active site")) %>% select(column, key)
+
+
+#column numbers are  2 UMDs and 2 CMDs significant, these are CMD 42 and 753 and UMDs are 299 and 510. 
+
+
+#table(merged_df$key_GnomadV43) #Put in a bit about showing Active sites are CMDs
+```
+
+```{r}
+
+
+
+active_site <- which(merged_df$key == "Active site") 
+active_site
+
+
+
+CMD_UMD_Active <- merged_df %>%
+  filter(key_GnomadV4 %in% c("UMD", "CMD", "Active site"))%>%
+  select(column, key_GnomadV4)
+CMD_UMD_Active
+
+
+table(merged_df$key_GnomadV4)  #number of CMDs and UMDs.
+
+merged_df %>% filter(mes_p < 0.1)
+```
+
+
+
+```{r}
+
+
+legend_order <- c( "CMD", "UMD", "No significance",  "Active site")  #Reorder because active site is significant 
+merged_df$key_GnomadV4 <- factor(merged_df$key_GnomadV4, levels = legend_order)
+
+
+your_plot <-ggplot(merged_df, aes(x = shenkin_nrank, y = mes_or, color = key_GnomadV4, alpha = key_GnomadV4)) +
+  geom_point() +
+  #geom_text(data = aspartyl_proteases, aes(label = column), hjust = -0.2, vjust = 0.5, size = 4) +
+  labs(x = "Alignment column conservations  (Shenkin)", y = "Missense score (human variation)") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0.25, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0.75, linetype = "dashed", color = "black") + 
+  #scale_color_manual(values = c("grey" = "grey", "blue" = "blue", "red" = "red", "purple" = "purple", "black"="black" )) + 
+  scale_color_manual(values = c("Active site" = "purple", "No significance" = "grey", "black" = "black", "UMD" = "red", "CMD" = "blue", "UME" = "yellow" )) +
+  scale_alpha_manual(values = c("Active site" = 0.8, "No significance" = 0.4, "CMD" = 0.8, "UMD" = 0.8)) +
+  scale_y_log10()
+your_plot
+
+
+ggsave("C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/MES_shenkin_GnomadV4_Real_MES.png", plot = your_plot, width = 6, height = 4, units = "in")
+
+```
+```{r}
+subset_df <- merged_df[, c("column", "key_GnomadV4")]
+aspartyl_proteases <- left_join(aspartyl_proteases, subset_df, by = "column")
+
+
+#column stops at 770 in merged so as no structural data after this point. aspartyl_protease stops at 788. Loose 18 positions, drop 18 rows
+
+aspartyl_proteases <- na.omit(aspartyl_proteases, cols = "key_GnomadV4")
+aspartyl_proteases$key_GnomadV4
+```
+
+
+
+```{r}
+#legend_order <- c( "CMD", "UMD", "Active site", "No significance" )  #Reorder because active site is significant 
+#aspartyl_proteases$key_GnomadV4 <- factor(aspartyl_proteases$key_GnomadV4, levels = legend_order)
+
+
+ligand_or_protein_graph(aspartyl_proteases, aspartyl_proteases$PDB_protein_ligand_interactions,aspartyl_proteases$key_GnomadV4, "ligand interaction",  "C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/ligand_interaction_GnomadV4_Real_MES.png")
+ligand_or_protein_graph(aspartyl_proteases, aspartyl_proteases$PDB_protein_protein_interactions,aspartyl_proteases$key_GnomadV4, "protein interaction",  "C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/protein_interaction_GnomadV4_Real_MES.png")
+
+
+
+
+
+file_path <- "C:/Users/Adam Martin/OneDrive - University of Dundee/Honours Project/231006a-AM-honours-project-aps/varalign-data-PF00026/feather/"
+```
+```{r}
+
+legend_order <- c( "CMD", "UMD", "Active site", "No significance" )  #Reorder because active site is significant 
+aspartyl_proteases$key_GnomadV4 <- factor(aspartyl_proteases$key_GnomadV4, levels = legend_order)
+
+
+plot1 <- ligand_or_protein_graph(aspartyl_proteases, aspartyl_proteases$PDB_protein_ligand_interactions,aspartyl_proteases$key_GnomadV4, "Ligand",  "C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/ligand_interaction_Real_MES.png")
+plot2 <- ligand_or_protein_graph(aspartyl_proteases, aspartyl_proteases$PDB_protein_protein_interactions,aspartyl_proteases$key_GnomadV4, "Protein",  "C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/protein_interaction_Real_MES.png")
+
+
+
+plot_list <- list(plot1, plot2)
+
+combined_plot <- plot_grid(
+  plotlist = plot_list,
+  ncol = 1,
+  widths = unit(30, "inches"),
+  rel_heights = c(2, 1.4)
+)
+
+
+save_path <- "C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/ligand_protein_interactionGnomadV4_Real_MES.png"
+print(combined_plot)
+ggsave(save_path, plot = combined_plot, width = 30, height = 15, units = "in")
+
+
+
+```
+
+
+```{r}
+
+create_custom_plot <- function(selected_columns, index_of_UMD_CMD_active_site, title, key, i) {
+  selected_columns$index <- seq_len(nrow(selected_columns))
+  df_long <- gather(selected_columns, key = "Variable", value = "Value", -index)
+  df_combined <- cbind(df_long, keys = key)
+  
+  p <- ggplot(df_combined, aes(x = index, y = Value, fill = Variable, alpha = as.factor(index %in% index_of_UMD_CMD_active_site))) +
+    geom_bar(stat = "identity") +
+    #theme_minimal() +
+    labs(x = ifelse(i == "Active site", "Alignment Column", ""), y = i, fill = "") +
+    coord_cartesian(ylim = c(0, 16)) +
+    scale_y_continuous(breaks = seq(0, 16, by = 4)) +
+    scale_x_continuous(breaks = seq(0, nrow(aspartyl_proteases), by = 25)) +
+    scale_alpha_manual(values = c("TRUE" = 5, "FALSE" = 0.2), guide = "none") +
+    theme(legend.position = ifelse(i == "Active site", "bottom", "none"), legend.justification ="center", plot.margin = margin(0, 0, 0, 0),      plot.title = element_text(hjust = 0.5))
+  
+  
+    if (i == "CMD") {
+    p <- p + ggtitle(title)  # Add your desired title
+  }
+
+  print(p)
+  return(p)
+}
+
+read_feather_file <- function(file_path) {
+  data <- arrow::read_feather(file_path)
+  return(data)
+}
+
+create_plot <- function(selected_columns, CMD_UMD_Active, title, key) {
+  plot_list <- list()
+
+  for (i in c("CMD", "UMD", "Active site")) {
+    index_of_UMD_CMD_active_site <- CMD_UMD_Active %>% filter(key_GnomadV4 == i)
+    plot <- create_custom_plot(selected_columns, index_of_UMD_CMD_active_site$dex,  title, key, i)
+    plot_list[[i]] <- plot
+  }
+
+  combined_plot <- plot_grid(plotlist = plot_list, ncol = 1,  widths = c(8.27), rel_heights = c(1.6, 1.3, 1))
+  print(combined_plot)
+  return(combined_plot)
+}
+
+
+
+
+
+
+
+CMD_UMD_Active <- aspartyl_proteases %>%
+  filter(key_GnomadV4 %in% c("UMD", "CMD", "Active site"))%>%
+  select(dex, key_GnomadV4)
+
+table(CMD_UMD_Active$key_GnomadV4)
+
+
+file_path <- "C:/Users/Adam Martin/OneDrive - University of Dundee/Honours Project/231006a-AM-honours-project-aps/varalign-data-PF00026/feather/"
+
+rsa_class <- read_feather_file(paste0(file_path, "rsa_class_df.feather"))
+rsa_class <- rsa_class %>% rename(column = "__index_level_0__")
+rsa_class <- left_join(aspartyl_proteases, rsa_class, by = "column")
+selected_columns <- rsa_class[c("core", "part", "surf")]
+plot<-create_plot(selected_columns, CMD_UMD_Active, "Amino acid position", "RSA")
+save_path <-"C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/RSA_GnomadV4_Real_MES.png"
+ggsave(save_path, plot = plot, width = 6, height = 4, units = "in")
+
+ss_class <- read_feather_file(paste0(file_path,"ss_class_df.feather"))
+
+ss_class <- ss_class %>% rename(column = "__index_level_0__")
+ss_class <- left_join(aspartyl_proteases, ss_class, by = "column")
+selected_columns <- ss_class[c("helix", "coil", "strand")]
+plot<-create_plot(selected_columns, CMD_UMD_Active, "Secondary Structure", "SS")
+save_path <-"C:/Users/Adam Martin/OneDrive - University of Dundee/Documents/Honour Project Dump/SS_GnomadV4_Real_MES.png"
+ggsave(save_path, plot = plot, width = 6, height = 4, units = "in")
+
+
+
+aspartyl_proteases
+
+
+
+```
+
+
+```{r}
+# Index numbers are
+# 2 UMDs and 2 CMDs significant, these are CMD 22 and 307 and UMDs are 199 and 230. 
+# CMD 22 is part and coil and high in protein and ligand, CMD 307 is core and strand. 
+# UMD 119 high in protein and ligand and 230 high in protein are surface are both coils 
+
+
+
+
+
+significant <- c("CMD", "UMD")
+columns_to_check <- c("p_core", "p_part", "p_surf")
+rsa_df <- rsa_class %>%
+  filter(key_GnomadV4 %in% significant)%>%
+  select("column","dex", "key_GnomadV4", "p_core", "p_part", "p_surf")
+rsa_df$max_column <- names(rsa_df[columns_to_check])[max.col(rsa_df[columns_to_check], "first")]
+colnames(rsa_df)[colnames(rsa_df) == "max_column"] <- "RSA_max_column"
+rsa_df
+
+
+
+columns_to_check <- c("p_coil", "p_strand", "p_helix")
+ss_df <- ss_class %>%
+  filter(key_GnomadV4 %in% significant)%>%
+  select("column", "key_GnomadV4", "p_coil", "p_strand", "p_helix")
+ss_df$max_column <- names(ss_df[columns_to_check])[max.col(ss_df[columns_to_check], "first")]
+colnames(ss_df)[colnames(ss_df) == "max_column"] <- "SS_max_column"
+ss_df
+
+
+
+
+average <- mean(aspartyl_proteases$PDB_protein_ligand_interactions)
+average
+
+ligand_df <- aspartyl_proteases %>%
+  filter(key_GnomadV4 %in% significant, PDB_protein_ligand_interactions >  average)%>%
+  select( "dex", "column", "key_GnomadV4","PDB_protein_ligand_interactions")
+ligand_df
+
+
+average <- mean(aspartyl_proteases$PDB_protein_protein_interactions)
+average
+
+protein_df <- aspartyl_proteases %>%
+  filter(key_GnomadV4 %in% significant, PDB_protein_protein_interactions >  average)%>%
+  select( "dex", "column", "key_GnomadV4","PDB_protein_protein_interactions")
+protein_df
+
+
+
+```
+
+
+
+
+
+
+```{r}
+
+
+
+
+
+#Collecting info on CMD, UMD and active site
+
+CMD_UMD_Active <- aspartyl_proteases %>%
+  filter(key_GnomadV4 %in% c("UMD", "CMD", "Active site"))%>%
+  select(column, dex, key_GnomadV4)
+
+
+
+colnames(rsa_class)[colnames(rsa_class) == "__index_level_0__"] <- "column"
+rsa_df <- rsa_class %>%
+  filter(column %in% CMD_UMD_Active$column)%>%
+  select("column", "key_GnomadV4", "p_core", "p_part", "p_surf")
+
+
+columns_to_check <- c("p_core", "p_part", "p_surf")
+rsa_df$max_column <- names(rsa_df[columns_to_check])[max.col(rsa_df[columns_to_check], "first")]
+colnames(rsa_df)[colnames(rsa_df) == "max_column"] <- "RSA_max_column"
+table(rsa_df$key_GnomadV4, rsa_df$RSA_max_column)
+
+
+colnames(ss_class)[colnames(ss_class) == "__index_level_0__"] <- "column"
+
+
+#rsa_df %>%
+#  filter(key_GnomadV4 == "Active site")%>%
+#  select("column", "key_GnomadV4", "RSA_max_column")
+
+
+ss_class %>%
+  filter(column %in% CMD_UMD_Active$column)%>%
+  select("column", "key_GnomadV4", "RSA_max_column")
+
+columns_to_check <- c("p_strand", "p_coil", "p_helix")
+ss_class_df$max_column <- names(ss_class_df[columns_to_check])[max.col(ss_class_df[columns_to_check], "first")]
+colnames(ss_class_df)[colnames(ss_class_df) == "max_column"] <- "ss_class_max_column"
+table(ss_class_df$key_GnomadV4, ss_class_df$ss_class_max_column)
+
+
+All_high_SS_POS <- rsa_df %>%
+  inner_join(ss_class_df, by = "column") 
+table(All_high_SS_POS$key_GnomadV4.x, All_high_SS_POS$RSA_max_column, All_high_SS_POS$ss_class_max_column)
+
+
+
+median(aspartyl_proteases$PDB_protein_ligand_interactions)
+mean(aspartyl_proteases$PDB_protein_ligand_interactions)
+
+
+
+
+
+third_quartile <- quantile(aspartyl_proteases$PDB_protein_ligand_interactions, 0.75)
+third_quartile
+
+ligand_df <- aspartyl_proteases %>%
+  filter(column %in% CMD_UMD_Active$column, PDB_protein_ligand_interactions > 3 )%>%
+  select( "dex", "column", "key_GnomadV4","PDB_protein_ligand_interactions")
+
+
+print("high in ligand interactions")
+table(ligand_df$key_GnomadV4)
+
+median(aspartyl_proteases$PDB_protein_protein_interactions)
+mean(aspartyl_proteases$PDB_protein_protein_interactions)
+
+
+third_quartile <- quantile(aspartyl_proteases$PDB_protein_protein_interactions, 0.75)
+third_quartile
+protein_df <- aspartyl_proteases %>%
+  filter(column %in% CMD_UMD_Active$column, PDB_protein_protein_interactions > 6)%>%
+  select("dex", "column", "key_GnomadV4", "PDB_protein_protein_interactions")
+
+print("high in Protein interactions")
+table(protein_df$key_GnomadV4)
+
+
+
+rsa_ss <- rsa_df %>%
+  inner_join(ss_class_df, by = "column")
+table(rsa_ss$key_GnomadV4.x, rsa_ss$ss_class_max_column, rsa_ss$RSA_max_column)
+
+
+All_high_protein_ligand <- rsa_df %>%
+  inner_join(ss_class_df, by = "column") %>%
+  inner_join(ligand_df, by = "column") %>%
+  inner_join(protein_df, by = "column")
+
+
+print("Protein, ligand")
+table(All_high_protein_ligand$key_GnomadV4.x, All_high_protein_ligand$RSA_max_column)
+
+All_high_protein_ligand %>%
+  filter(key_GnomadV4.x == "CMD", RSA_max_column == "p_part")
+
+
+All_high_protein_ligand %>%
+  filter(key_GnomadV4.x == "CMD", RSA_max_column == "p_part") 
+
+names(All_high_protein_ligand)
+
+
+All_high_protein_ligand %>%
+  filter(key_GnomadV4.x == "Active site", RSA_max_column == "p_part")
+
+ligand_df_RSA <- ligand_df %>%
+  inner_join(rsa_df, by = "column") 
+print("ligand")
+table(ligand_df_RSA$key_GnomadV4.x, ligand_df_RSA$RSA_max_column)
+
+ligand_df_RSA %>%
+  filter(key_GnomadV4.x == "CMD")
+
+protein_df_RSA <- protein_df %>%
+  inner_join(rsa_df, by = "column") 
+print("protein")
+table(protein_df_RSA$key_GnomadV4.x, protein_df_RSA$RSA_max_column)
+
+ligand_df_RSA %>%
+  filter(RSA_max_column == "p_surf", key_GnomadV4.x == "UMD")
+protein_df_RSA %>%
+  filter(RSA_max_column == "p_surf", key_GnomadV4.x == "UMD")
+
+names(rsa_class)
+
+table(rsa_class$CV_Pathogenic, rsa_class$key_GnomadV4)  #4 CMDs that are pathogenic
+
+pathogenic_df <- rsa_class %>%
+  filter(CV_Pathogenic > 0)
+
+rsa_class$key_GnomadV4
+
+
+rsa_class %>% 
+  filter(key_GnomadV4 ==  "Active site") %>%
+  select(column, key_GnomadV4)
+
+pathogenic_df <- rsa_class %>%
+  filter(CV_Pathogenic > 0)
+pathogenic_df[c("column", "CV_Pathogenic", "key_GnomadV4")]
+
+
+pathogenic_df <- ss_class %>%
+  filter(CV_Pathogenic > 0)
+pathogenic_df[c("dex", "CV_Pathogenic", "key_GnomadV4")]
+```
+
+
+```{r}
+library(dplyr)
+
+
+All_high_protein_ligand <- rsa_df %>%
+  inner_join(ss_class_df, by = "column") %>%
+  inner_join(ligand_df, by = "column") 
+  #inner_join(protein_df, by = "column")
+
+table(All_high_protein_ligand$key_GnomadV4.x, All_high_protein_ligand$RSA_max_column)
+
+
+All_high_protein_ligand <- rsa_df %>%
+  inner_join(ss_class_df, by = "column") %>%
+  #inner_join(ligand_df, by = "column") %>%
+  inner_join(protein_df, by = "column")
+
+All_high_protein_ligand <- All_high_protein_ligand %>%
+  select(unique(names(.), fromLast = TRUE))
+
+table(All_high_protein_ligand$key_GnomadV4.x, All_high_protein_ligand$RSA_max_column, All_high_protein_ligand$ss_class_max_column)
+
+
+
+```
+
+```{r}
+protein_df %>%
+  filter(key_GnomadV4 == "CMD")
+
+protein_df
+```
+```{r}
+colnames(rsa_class)[colnames(rsa_class) == "__index_level_0__"] <- "column"
+rsa_df <- rsa_class %>%
+  filter(column %in% aspartyl_proteases$column)%>%
+  select("column", "key_GnomadV4", "p_core", "p_part", "p_surf")
+
+
+columns_to_check <- c("p_core", "p_part", "p_surf")
+rsa_df$max_column <- names(rsa_df[columns_to_check])[max.col(rsa_df[columns_to_check], "first")]
+colnames(rsa_df)[colnames(rsa_df) == "max_column"] <- "RSA_max_column"
+table( rsa_df$RSA_max_column)
+
+
+
+
+
+colnames(ss_class)[colnames(ss_class) == "__index_level_0__"] <- "column"
+ss_class_df <- ss_class %>%
+  filter(column %in% aspartyl_proteases$column)%>%
+  select("column", "key_GnomadV4", "p_strand", "p_coil", "p_helix")
+
+columns_to_check <- c("p_strand", "p_coil", "p_helix")
+ss_class_df$max_column <- names(ss_class_df[columns_to_check])[max.col(ss_class_df[columns_to_check], "first")]
+colnames(ss_class_df)[colnames(ss_class_df) == "max_column"] <- "ss_class_max_column"
+table(ss_class_df$key_GnomadV4, ss_class_df$ss_class_max_column)
+
+
+
+
+
+
+```
+```{r}
+aspartyl_proteases %>%
+  filter(key == "UMD") %>%
+  select(dex, key)
+```
+
+
+
+```{r}
+
+colnames(rsa_class)[colnames(rsa_class) == "__index_level_0__"] <- "column"
+rsa_df <- rsa_class %>%
+  filter(column %in% CMD_UMD_Active$column)%>%
+  select("dex", "column", "key_GnomadV4", "p_core", "p_part", "p_surf")
+
+
+columns_to_check <- c("p_core", "p_part", "p_surf")
+rsa_df$max_column <- names(rsa_df[columns_to_check])[max.col(rsa_df[columns_to_check], "first")]
+colnames(rsa_df)[colnames(rsa_df) == "max_column"] <- "RSA_max_column"
+table( rsa_df$RSA_max_column)
+
+
+
+
+
+colnames(ss_class)[colnames(ss_class) == "__index_level_0__"] <- "column"
+ss_class_df <- ss_class %>%
+  filter(column %in% CMD_UMD_Active$column)%>%
+  select("dex","column", "key_GnomadV4", "p_strand", "p_coil", "p_helix")
+
+
+
+columns_to_check <- c("p_strand", "p_coil", "p_helix")
+ss_class_df$max_column <- names(ss_class_df[columns_to_check])[max.col(ss_class_df[columns_to_check], "first")]
+colnames(ss_class_df)[colnames(ss_class_df) == "max_column"] <- "ss_class_max_column"
+table(ss_class_df$ss_class_max_column, ss_class_df$key_GnomadV4)
+
+
+
+
+All_high_protein_ligand <- rsa_df %>%
+  inner_join(ss_class_df, by = "column") %>%
+  inner_join(ligand_df, by = "column") %>%
+  inner_join(protein_df, by = "column")
+
+
+All_high_protein_ligand %>%
+  filter ( key_GnomadV4.x == "Active site")
+
+All_high_protein_ligand <- rsa_df %>%
+  inner_join(ligand_df, by = "column")
+
+All_high_protein_ligand %>% filter(key_GnomadV4.x == "UMD",RSA_max_column == "p_part" ) %>% select(dex.x)
+
+
+All_high_protein_ligand <- rsa_df %>%
+  inner_join(protein_df, by = "column")
+
+All_high_protein_ligand %>% filter(key_GnomadV4.x == "Active site") %>% select(dex.x, key_GnomadV4.x, RSA_max_column)
+
+
+ligand_df %>% filter(key_GnomadV4 == "CMD")
+```
+
+names(aspartyl_proteases)
+aspartyl_proteases$key
+
+table(CMD_UMD_Active$key_GnomadV4)
+```
+
+
